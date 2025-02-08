@@ -191,7 +191,7 @@ impl<V: VSA> ObjectEncoder<V> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mbat::MBAT;
+    use crate::hypervector::mbat::MBAT;
     use crate::TieBreaker;
     use serde_json::json;
 
@@ -365,7 +365,7 @@ mod tests {
 #[cfg(test)]
 mod ssp_tests {
     use super::*;
-    use crate::ssp::SSP;
+    use crate::hypervector::ssp::SSP;
     use crate::TieBreaker;
     use serde_json::json;
 
@@ -538,7 +538,7 @@ mod ssp_tests {
 #[cfg(test)]
 mod fhrr_tests {
     use super::*;
-    use crate::fhrr::FHRR;
+    use crate::hypervector::fhrr::FHRR;
     use crate::TieBreaker;
     use serde_json::json;
 

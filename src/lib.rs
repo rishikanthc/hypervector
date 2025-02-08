@@ -7,13 +7,24 @@
 //! - **SSP**: Semantic Spatial Parameters (implemented in a separate module).
 //!
 //! Core components such as a global RNG, the `VSA` trait, and a generic `Hypervector` type
-//! are defined here. Additional VSA implementations (e.g. FHRR) can be added as separate modules.
+//! are defined here.
+
+pub mod hypervector {
+    pub mod encoder;
+    pub mod mbat; // if you have this module
+
+    // Re-export core items
+    pub use crate::{Hypervector, TieBreaker, VSA};
+}
 
 use once_cell::sync::Lazy;
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
 use std::ops::{Add, Mul};
 use std::sync::Mutex;
+
+// Now you can safely import MBAT using the hypervector module:
+use crate::hypervector::mbat::MBAT;
 
 /// A lazily-initialized, thread-safe global RNG used for hypervector generation and operations.
 ///
@@ -294,16 +305,59 @@ impl<V: VSA> Mul for Hypervector<V> {
     }
 }
 
-pub mod encoder; // VSA ObjectEncoder is implemented in src/encoder.rs
-pub mod fhrr;
-pub mod mbat;
-pub mod ssp; // SSP is implemented in src/ssp.rs
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    // For testing MBAT, we alias Hypervector<mbat::MBAT> as HV.
+    // Bring the mbat module into scope.
+    use crate::hypervector::mbat;
+    // Now you can alias HV as follows:
     type HV = Hypervector<mbat::MBAT>;
+
+    #[test]
+    fn test_codebook_pair_bindings() {
+        let dim = 10000;
+        let codebook: Vec<HV> = HV::generate_many(dim, 10);
+
+        // Compute bindings for all unique pairs (i, j) with i < j.
+        let mut pair_bindings = Vec::new();
+        for i in 0..codebook.len() {
+            for j in (i + 1)..codebook.len() {
+                let binding = codebook[i].bind(&codebook[j]);
+                pair_bindings.push(((i, j), binding));
+            }
+        }
+
+        // For each binding, recompute it and check that the cosine similarity is 1.
+        for &((i, j), ref binding) in &pair_bindings {
+            let recomputed = codebook[i].bind(&codebook[j]);
+            let sim: f32 = binding.cosine_similarity(&recomputed);
+            assert!(
+                (sim - 1.0).abs() < 1e-6,
+                "Recomputed binding differs for pair ({}, {})",
+                i,
+                j
+            );
+        }
+
+        // Compare bindings from different pairs; they should be nearly orthogonal.
+        for (idx1, &((i, j), ref binding1)) in pair_bindings.iter().enumerate() {
+            for (idx2, &((k, l), ref binding2)) in pair_bindings.iter().enumerate() {
+                if idx1 == idx2 {
+                    continue;
+                }
+                let sim: f32 = binding1.cosine_similarity(&binding2);
+                assert!(
+                sim.abs() < 0.1,
+                "Binding for pair ({}, {}) has cosine similarity {} with binding for pair ({}, {})",
+                i,
+                j,
+                sim,
+                k,
+                l
+            );
+            }
+        }
+    }
 
     /// Helper function to generate two random hypervectors.
     fn generate_two(dim: usize) -> (HV, HV) {
@@ -363,50 +417,6 @@ mod tests {
             "Binding similarity with second constituent was {}",
             sim_b
         );
-    }
-
-    /// Tests creating a codebook of 10 hypervectors, bundling each unique pair,
-    /// and verifying that recomputed bindings for the same pair yield a cosine similarity of 1.
-    #[test]
-    fn test_codebook_pair_bindings() {
-        let dim = 10000;
-        let codebook: Vec<HV> = HV::generate_many(dim, 10);
-
-        // Compute bindings for all unique pairs (i, j) with i < j.
-        let mut pair_bindings = Vec::new();
-        for i in 0..codebook.len() {
-            for j in (i + 1)..codebook.len() {
-                let binding = codebook[i].bind(&codebook[j]);
-                pair_bindings.push(((i, j), binding));
-            }
-        }
-
-        // For each binding, recompute it and check that the cosine similarity is 1.
-        for &((i, j), ref binding) in &pair_bindings {
-            let recomputed = codebook[i].bind(&codebook[j]);
-            let sim = binding.cosine_similarity(&recomputed);
-            assert!(
-                (sim - 1.0).abs() < 1e-6,
-                "Recomputed binding differs for pair ({}, {})",
-                i,
-                j
-            );
-        }
-
-        // Compare bindings from different pairs; they should be nearly orthogonal.
-        for (idx1, &((i, j), ref binding1)) in pair_bindings.iter().enumerate() {
-            for (idx2, &((k, l), ref binding2)) in pair_bindings.iter().enumerate() {
-                if idx1 == idx2 {
-                    continue;
-                }
-                let sim = binding1.cosine_similarity(binding2);
-                assert!(
-                    sim.abs() < 0.1,
-                    "Binding for pair ({}, {}) has cosine similarity {} with binding for pair ({}, {})",
-                    i, j, sim, k, l
-                );
-            }
-        }
     }
 
     /// Verifies that converting a hypervector to a plain vector yields the expected values.
