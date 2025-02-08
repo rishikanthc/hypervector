@@ -1,11 +1,13 @@
 //! # Hypervector Crate
 //!
-//! This crate implements high-dimensional vectors for hyperdimensional computing / VSA.
-//! It currently provides two implementations:
-//! - **MBAT**: Bipolar vectors (elements in {-1, +1}).
-//! - **SSP**: Semantic Spatial Parameters (in a separate module).
+//! This crate implements high-dimensional vectors for hyperdimensional computing and
+//! Vector Symbolic Architectures (VSAs). It currently provides two implementations:
 //!
-//! The core components (global RNG, VSA trait, Hypervector type, etc.) are defined here.
+//! - **MBAT**: Bipolar vectors (elements in {-1, +1}).
+//! - **SSP**: Semantic Spatial Parameters (implemented in a separate module).
+//!
+//! Core components such as a global RNG, the `VSA` trait, and a generic `Hypervector` type
+//! are defined here. Additional VSA implementations (e.g. FHRR) can be added as separate modules.
 
 use once_cell::sync::Lazy;
 use rand::{rngs::StdRng, Rng, SeedableRng};
@@ -13,15 +15,20 @@ use serde::{Deserialize, Serialize};
 use std::ops::{Add, Mul};
 use std::sync::Mutex;
 
+/// A lazily-initialized, thread-safe global RNG used for hypervector generation and operations.
+///
+/// This global RNG is used by all methods that do not receive their own RNG.
 static GLOBAL_RNG: Lazy<Mutex<StdRng>> = Lazy::new(|| Mutex::new(StdRng::from_entropy()));
 
-/// Set the seed for the global RNG. This affects all hypervector generation and operations.
+/// Sets the seed for the global RNG. This affects all hypervector generation and operations that
+/// use the global RNG.
 ///
 /// # Example
 ///
-/// ```
+/// ```rust
 /// use hypervector::set_global_seed;
 ///
+/// // Set the global RNG seed to 42 for reproducibility.
 /// set_global_seed(42);
 /// ```
 pub fn set_global_seed(seed: u64) {
@@ -29,48 +36,81 @@ pub fn set_global_seed(seed: u64) {
     *rng = StdRng::seed_from_u64(seed);
 }
 
-/// Tie-breaking options for the bundling operation.
+/// Options for tie-breaking during the bundling operation.
 ///
-/// When bundling, an element-wise sum may result in a tie (zero). This enum lets you choose how to resolve it.
+/// When bundling two hypervectors, an element-wise sum may result in a tie (i.e. a zero).
+/// This enum specifies how such ties are resolved.
 #[derive(Debug, Clone, Copy)]
 pub enum TieBreaker {
     /// Always choose +1 when a tie occurs.
     AlwaysPositive,
-    /// Always choose –1 when a tie occurs.
+    /// Always choose -1 when a tie occurs.
     AlwaysNegative,
-    /// Randomly choose between +1 and –1 when a tie occurs.
+    /// Randomly choose between +1 and -1 when a tie occurs.
     Random,
 }
 
-/// The trait defining the interface for a VSA algorithm.
-/// New VSA implementations (like SSP) can be added by implementing this trait.
+/// The `VSA` trait defines the interface for a Vector Symbolic Architecture.
+/// New VSA implementations (such as SSP, MBAT, or FHRR) can be added by implementing this trait.
+///
+/// # Associated Types
+///
+/// * `Elem` - The type used to represent each element in the hypervector.
 pub trait VSA: Sized + Clone {
     /// The type used to represent each element in the hypervector.
     type Elem: Copy + std::fmt::Debug + PartialEq + Into<f32>;
 
-    /// Generate a random hypervector of a given dimension.
+    /// Generates a random hypervector of the given dimension.
+    ///
+    /// # Arguments
+    ///
+    /// * `dim` - The dimensionality of the hypervector.
+    /// * `rng` - A mutable reference to a random number generator.
     fn generate(dim: usize, rng: &mut impl Rng) -> Self;
 
-    /// Bundle (superpose) two hypervectors.
+    /// Bundles (superposes) two hypervectors.
     ///
-    /// For MBAT, this is the element-wise sum followed by a sign function with tie-breaking.
+    /// For example, for MBAT this is typically implemented as the element-wise sum followed by a
+    /// sign function with tie-breaking.
+    ///
+    /// # Arguments
+    ///
+    /// * `other` - The hypervector to bundle with.
+    /// * `tie_breaker` - The rule to resolve ties.
+    /// * `rng` - A mutable reference to a random number generator.
     fn bundle(&self, other: &Self, tie_breaker: crate::TieBreaker, rng: &mut impl Rng) -> Self;
 
-    /// Bind two hypervectors.
+    /// Binds two hypervectors.
     ///
-    /// For MBAT, this is the element-wise product.
+    /// For MBAT, this is implemented as the element-wise product.
+    ///
+    /// # Arguments
+    ///
+    /// * `other` - The hypervector to bind with.
     fn bind(&self, other: &Self) -> Self;
 
-    /// Compute the cosine similarity between two hypervectors.
+    /// Computes the cosine similarity between two hypervectors.
+    ///
+    /// # Arguments
+    ///
+    /// * `other` - The hypervector to compare with.
     fn cosine_similarity(&self, other: &Self) -> f32;
 
-    /// Compute the normalized Hamming distance between two hypervectors.
+    /// Computes the normalized Hamming distance between two hypervectors.
+    ///
+    /// # Arguments
+    ///
+    /// * `other` - The hypervector to compare with.
     fn hamming_distance(&self, other: &Self) -> f32;
 
-    /// Convert the hypervector into a plain `Vec<f32>`.
+    /// Converts the hypervector into a plain `Vec<f32>`.
     fn to_vec(&self) -> Vec<f32>;
 
-    /// Bundle many hypervectors (folding a slice using the bundling operation).
+    /// Bundles many hypervectors (folding a slice using the bundling operation).
+    ///
+    /// # Panics
+    ///
+    /// Panics if `vectors` is empty.
     fn bundle_many(vectors: &[Self], tie_breaker: crate::TieBreaker, rng: &mut impl Rng) -> Self {
         assert!(
             !vectors.is_empty(),
@@ -83,7 +123,11 @@ pub trait VSA: Sized + Clone {
         result
     }
 
-    /// Bind many hypervectors (folding a slice using the binding operation).
+    /// Binds many hypervectors (folding a slice using the binding operation).
+    ///
+    /// # Panics
+    ///
+    /// Panics if `vectors` is empty.
     fn bind_many(vectors: &[Self]) -> Self {
         assert!(
             !vectors.is_empty(),
@@ -97,16 +141,35 @@ pub trait VSA: Sized + Clone {
     }
 }
 
-/// A generic Hypervector type parametrized over a VSA implementation.
+/// A generic hypervector type parameterized over a VSA implementation.
 ///
-/// This type wraps an inner hypervector and provides high-level operations (generation, bundling, binding, similarity checks).
+/// This type wraps an inner hypervector and provides high-level operations for generation,
+/// bundling, binding, similarity comparisons, and conversion to a plain vector.
+///
+/// # Type Parameters
+///
+/// * `V` - A type that implements the `VSA` trait.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Hypervector<V: VSA> {
+    /// The underlying hypervector.
     pub inner: V,
 }
 
 impl<V: VSA> Hypervector<V> {
-    /// Generate a random hypervector of a given dimension using the global RNG.
+    /// Generates a random hypervector of the given dimension using the global RNG.
+    ///
+    /// # Arguments
+    ///
+    /// * `dim` - The dimensionality of the hypervector.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use hypervector::Hypervector;
+    /// use hypervector::mbat::MBAT;
+    ///
+    /// let hv = Hypervector::<MBAT>::generate(1000);
+    /// ```
     pub fn generate(dim: usize) -> Self {
         let mut rng = GLOBAL_RNG.lock().unwrap();
         Self {
@@ -114,7 +177,12 @@ impl<V: VSA> Hypervector<V> {
         }
     }
 
-    /// Generate many random hypervectors.
+    /// Generates many random hypervectors.
+    ///
+    /// # Arguments
+    ///
+    /// * `dim` - The dimensionality of each hypervector.
+    /// * `count` - The number of hypervectors to generate.
     pub fn generate_many(dim: usize, count: usize) -> Vec<Self> {
         let mut rng = GLOBAL_RNG.lock().unwrap();
         (0..count)
@@ -124,7 +192,12 @@ impl<V: VSA> Hypervector<V> {
             .collect()
     }
 
-    /// Bundle (superpose) two hypervectors with the specified tie-breaking rule.
+    /// Bundles (superposes) this hypervector with another using the specified tie-breaking rule.
+    ///
+    /// # Arguments
+    ///
+    /// * `other` - The hypervector to bundle with.
+    /// * `tie_breaker` - The tie-breaking rule to use.
     pub fn bundle(&self, other: &Self, tie_breaker: crate::TieBreaker) -> Self {
         let mut rng = GLOBAL_RNG.lock().unwrap();
         Self {
@@ -132,33 +205,47 @@ impl<V: VSA> Hypervector<V> {
         }
     }
 
-    /// Bind two hypervectors.
+    /// Binds this hypervector with another.
+    ///
+    /// # Arguments
+    ///
+    /// * `other` - The hypervector to bind with.
     pub fn bind(&self, other: &Self) -> Self {
         Self {
             inner: self.inner.bind(&other.inner),
         }
     }
 
-    /// Compute the cosine similarity between two hypervectors.
+    /// Computes the cosine similarity between this hypervector and another.
+    ///
+    /// # Arguments
+    ///
+    /// * `other` - The hypervector to compare with.
     pub fn cosine_similarity(&self, other: &Self) -> f32 {
         self.inner.cosine_similarity(&other.inner)
     }
 
-    /// Compute the normalized Hamming distance between two hypervectors.
+    /// Computes the normalized Hamming distance between this hypervector and another.
+    ///
+    /// # Arguments
+    ///
+    /// * `other` - The hypervector to compare with.
     pub fn hamming_distance(&self, other: &Self) -> f32 {
         self.inner.hamming_distance(&other.inner)
     }
 
-    /// Convert the hypervector into a plain vector of `f32`.
+    /// Converts this hypervector into a plain vector of `f32`.
     pub fn to_vec(&self) -> Vec<f32> {
         self.inner.to_vec()
     }
 
-    /// Bundle many hypervectors.
+    /// Bundles many hypervectors by extracting their inner representations and then wrapping
+    /// the bundled result back into a `Hypervector`.
     ///
-    /// This method extracts the inner vectors from the provided hypervectors,
-    /// calls the default implementation of `bundle_many` on the inner type,
-    /// and wraps the result back in a `Hypervector`.
+    /// # Arguments
+    ///
+    /// * `vectors` - A slice of hypervectors to bundle.
+    /// * `tie_breaker` - The tie-breaking rule to use.
     pub fn bundle_many(vectors: &[Self], tie_breaker: crate::TieBreaker) -> Self {
         let mut rng = GLOBAL_RNG.lock().unwrap();
         let inners: Vec<V> = vectors.iter().map(|hv| hv.inner.clone()).collect();
@@ -167,11 +254,12 @@ impl<V: VSA> Hypervector<V> {
         }
     }
 
-    /// Bind many hypervectors.
+    /// Binds many hypervectors by extracting their inner representations and then wrapping
+    /// the bound result back into a `Hypervector`.
     ///
-    /// This method extracts the inner vectors from the provided hypervectors,
-    /// calls the default implementation of `bind_many` on the inner type,
-    /// and wraps the result back in a `Hypervector`.
+    /// # Arguments
+    ///
+    /// * `vectors` - A slice of hypervectors to bind.
     pub fn bind_many(vectors: &[Self]) -> Self {
         let inners: Vec<V> = vectors.iter().map(|hv| hv.inner.clone()).collect();
         Self {
@@ -180,8 +268,9 @@ impl<V: VSA> Hypervector<V> {
     }
 }
 
-// Overload the `+` operator for bundling.
-// Uses a default tie-breaker of `Random`.
+/// Overloads the `+` operator for bundling hypervectors.
+///
+/// This implementation uses a default tie-breaker of `Random`.
 impl<V: VSA> Add for Hypervector<V> {
     type Output = Self;
 
@@ -194,7 +283,7 @@ impl<V: VSA> Add for Hypervector<V> {
     }
 }
 
-// Overload the `*` operator for binding.
+/// Overloads the `*` operator for binding hypervectors.
 impl<V: VSA> Mul for Hypervector<V> {
     type Output = Self;
 
@@ -205,8 +294,7 @@ impl<V: VSA> Mul for Hypervector<V> {
     }
 }
 
-// Declare submodules for different VSA implementations.
-pub mod encoder;
+pub mod encoder; // VSA ObjectEncoder is implemented in src/encoder.rs
 pub mod fhrr;
 pub mod mbat;
 pub mod ssp; // SSP is implemented in src/ssp.rs
@@ -214,15 +302,15 @@ pub mod ssp; // SSP is implemented in src/ssp.rs
 #[cfg(test)]
 mod tests {
     use super::*;
-    // For testing MBAT, we use the alias HV.
+    // For testing MBAT, we alias Hypervector<mbat::MBAT> as HV.
     type HV = Hypervector<mbat::MBAT>;
 
-    /// Helper: generate two random hypervectors.
+    /// Helper function to generate two random hypervectors.
     fn generate_two(dim: usize) -> (HV, HV) {
         (HV::generate(dim), HV::generate(dim))
     }
 
-    /// With high-dimensional bipolar vectors, two random vectors should be nearly orthogonal.
+    /// Verifies that two random high-dimensional bipolar vectors are nearly orthogonal.
     #[test]
     fn test_random_vectors_orthogonal() {
         let dim = 10000;
@@ -235,7 +323,7 @@ mod tests {
         );
     }
 
-    /// Test that bundling two hypervectors yields a vector similar to its constituents.
+    /// Verifies that bundling two hypervectors yields a vector that is similar to each constituent.
     #[test]
     fn test_bundling_similarity() {
         let dim = 10000;
@@ -256,7 +344,7 @@ mod tests {
         );
     }
 
-    /// Test that binding two hypervectors produces a result nearly orthogonal to each constituent.
+    /// Verifies that binding two hypervectors produces a result nearly orthogonal to each constituent.
     #[test]
     fn test_binding_orthogonality() {
         let dim = 10000;
@@ -277,11 +365,8 @@ mod tests {
         );
     }
 
-    /// Test creating a codebook of 10 hypervectors, bundling pairs, and verifying retrieval.
-    ///
-    /// This test generates 10 random hypervectors, computes bindings for every unique pair,
-    /// verifies that recomputed bindings for the same pair yield a cosine similarity of 1,
-    /// and ensures that bindings from different pairs are nearly orthogonal.
+    /// Tests creating a codebook of 10 hypervectors, bundling each unique pair,
+    /// and verifying that recomputed bindings for the same pair yield a cosine similarity of 1.
     #[test]
     fn test_codebook_pair_bindings() {
         let dim = 10000;
@@ -308,15 +393,13 @@ mod tests {
             );
         }
 
-        // Compare bindings from different pairs.
-        // They should be nearly orthogonal.
+        // Compare bindings from different pairs; they should be nearly orthogonal.
         for (idx1, &((i, j), ref binding1)) in pair_bindings.iter().enumerate() {
             for (idx2, &((k, l), ref binding2)) in pair_bindings.iter().enumerate() {
                 if idx1 == idx2 {
                     continue;
                 }
                 let sim = binding1.cosine_similarity(binding2);
-                // Allow a small chance of nonzero similarity due to randomness.
                 assert!(
                     sim.abs() < 0.1,
                     "Binding for pair ({}, {}) has cosine similarity {} with binding for pair ({}, {})",
@@ -326,13 +409,14 @@ mod tests {
         }
     }
 
-    /// Test conversion to `Vec<f32>`.
+    /// Verifies that converting a hypervector to a plain vector yields the expected values.
     #[test]
     fn test_to_vec_conversion() {
         let dim = 100;
         let hv = HV::generate(dim);
         let vec_f32 = hv.to_vec();
         assert_eq!(vec_f32.len(), dim);
+        // For MBAT hypervectors, each element should be either 1.0 or -1.0.
         for &x in &vec_f32 {
             assert!(x == 1.0 || x == -1.0, "Element {} is not 1.0 or -1.0", x);
         }

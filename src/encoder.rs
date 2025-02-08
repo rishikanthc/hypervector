@@ -1,9 +1,9 @@
-//! Object encoder module.
+//! # Object Encoder Module
 //!
-//! This module implements an object encoder for hyperdimensional computing using vector symbolic architectures (VSAs).
+//! This module implements an object encoder for hyperdimensional computing using
+//! vector symbolic architectures (VSAs). It takes as input a JSON object (using
+//! [serde_json::Value]) and produces an encoded hypervector. It maintains two codebooks:
 //!
-//! The encoder takes as input a JSON object (using [serde_json::Value]) and produces an encoded hypervector.
-//! It maintains two codebooks:
 //! 1. **Token Codebook:** Maps each unique JSON token (from keys or values) to a randomly generated hypervector.
 //! 2. **Object (Document) Codebook:** Maps a stringified JSON object to its encoded hypervector.
 //!
@@ -63,6 +63,10 @@ impl<V: VSA> ObjectEncoder<V> {
     ///
     /// Tokens are represented as strings. If the token does not exist in the codebook,
     /// a new random hypervector is generated (using [`Hypervector::generate`]) and stored.
+    ///
+    /// # Arguments
+    ///
+    /// * `token` - A string slice representing the token.
     pub fn get_token_vector(&mut self, token: &str) -> Hypervector<V> {
         self.token_codebook
             .entry(token.to_string())
@@ -72,20 +76,22 @@ impl<V: VSA> ObjectEncoder<V> {
 
     /// Encodes a JSON object into a hypervector.
     ///
-    /// The JSON object is expected to be a JSON object (i.e. a map). For each key–value pair:
+    /// The JSON object is expected to be a map. For each key–value pair:
     ///
     /// 1. The key (a string) is used as a token.
-    /// 2. If the value is an array, each element is encoded (if an element is an object, it is
-    ///    encoded recursively; otherwise its token is used) and then bundled together.
-    ///    Otherwise, the value is converted to a token string (via [`Self::value_to_token`])
-    ///    and a hypervector is generated.
+    /// 2. If the value is an array, each element is encoded:
+    ///    - If an element is an object, it is encoded recursively.
+    ///    - Otherwise, the element is converted to a token (via [`Self::value_to_token`]) and its hypervector is generated.
+    ///      The resulting hypervectors are bundled together.
     /// 3. The key hypervector is bound with the (possibly bundled) value hypervector.
     ///
-    /// All resulting bound hypervectors are then bundled (using the VSA’s bundling operator)
-    /// to yield a final hypervector representing the object.
+    /// All resulting bound hypervectors are bundled (using the VSA’s bundling operator)
+    /// to yield a final hypervector representing the object. The computed hypervector is stored in the object codebook.
+    /// On subsequent calls with the same JSON object, the stored encoding is returned.
     ///
-    /// The computed hypervector is stored in the object codebook. On subsequent calls
-    /// with the same JSON object, the stored encoding is returned.
+    /// # Arguments
+    ///
+    /// * `json_obj` - A reference to the JSON object to encode.
     pub fn encode_object(&mut self, json_obj: &Value) -> Hypervector<V> {
         // Use the string representation as a key.
         let obj_str = json_obj.to_string();
@@ -121,8 +127,7 @@ impl<V: VSA> ObjectEncoder<V> {
                         Hypervector::<V>::bundle_many(&elem_vectors, self.tie_breaker)
                     }
                 }
-                // (Optionally, you could also handle nested objects recursively here.)
-                // Value::Object(_) => self.encode_object(value),
+                // For all other value types, convert the value to a token.
                 _ => {
                     let token = Self::value_to_token(value);
                     self.get_token_vector(&token)
@@ -143,6 +148,10 @@ impl<V: VSA> ObjectEncoder<V> {
     /// Retrieves an encoded hypervector for a given JSON object, if it was encoded previously.
     ///
     /// Returns `None` if the JSON object has not been encoded.
+    ///
+    /// # Arguments
+    ///
+    /// * `json_obj` - A reference to the JSON object.
     pub fn get_encoded_object(&self, json_obj: &Value) -> Option<&Hypervector<V>> {
         self.object_codebook.get(&json_obj.to_string())
     }
@@ -151,6 +160,10 @@ impl<V: VSA> ObjectEncoder<V> {
     ///
     /// For simple types (strings, numbers, booleans) the conversion is straightforward.
     /// For other types (arrays or objects), the entire JSON value is stringified.
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - A reference to the JSON value.
     fn value_to_token(value: &Value) -> String {
         match value {
             Value::String(s) => s.clone(),
@@ -179,7 +192,7 @@ impl<V: VSA> ObjectEncoder<V> {
 mod tests {
     use super::*;
     use crate::mbat::MBAT;
-    use crate::{Hypervector, TieBreaker};
+    use crate::TieBreaker;
     use serde_json::json;
 
     /// Test that calling `get_token_vector` with the same token yields identical hypervectors.
@@ -353,7 +366,7 @@ mod tests {
 mod ssp_tests {
     use super::*;
     use crate::ssp::SSP;
-    use crate::{Hypervector, TieBreaker};
+    use crate::TieBreaker;
     use serde_json::json;
 
     /// Test that calling `get_token_vector` with the same token yields identical hypervectors for SSP.
@@ -526,7 +539,7 @@ mod ssp_tests {
 mod fhrr_tests {
     use super::*;
     use crate::fhrr::FHRR;
-    use crate::{Hypervector, TieBreaker};
+    use crate::TieBreaker;
     use serde_json::json;
 
     /// Test that calling `get_token_vector` with the same token yields identical FHRR hypervectors.
