@@ -9,22 +9,11 @@
 //! Core components such as a global RNG, the `VSA` trait, and a generic `Hypervector` type
 //! are defined here.
 
-pub mod hypervector {
-    pub mod encoder;
-    pub mod mbat; // if you have this module
-
-    // Re-export core items
-    pub use crate::{Hypervector, TieBreaker, VSA};
-}
-
 use once_cell::sync::Lazy;
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
 use std::ops::{Add, Mul};
 use std::sync::Mutex;
-
-// Now you can safely import MBAT using the hypervector module:
-use crate::hypervector::mbat::MBAT;
 
 /// A lazily-initialized, thread-safe global RNG used for hypervector generation and operations.
 ///
@@ -89,7 +78,7 @@ pub trait VSA: Sized + Clone {
     /// * `other` - The hypervector to bundle with.
     /// * `tie_breaker` - The rule to resolve ties.
     /// * `rng` - A mutable reference to a random number generator.
-    fn bundle(&self, other: &Self, tie_breaker: crate::TieBreaker, rng: &mut impl Rng) -> Self;
+    fn bundle(&self, other: &Self, tie_breaker: TieBreaker, rng: &mut impl Rng) -> Self;
 
     /// Binds two hypervectors.
     ///
@@ -122,7 +111,7 @@ pub trait VSA: Sized + Clone {
     /// # Panics
     ///
     /// Panics if `vectors` is empty.
-    fn bundle_many(vectors: &[Self], tie_breaker: crate::TieBreaker, rng: &mut impl Rng) -> Self {
+    fn bundle_many(vectors: &[Self], tie_breaker: TieBreaker, rng: &mut impl Rng) -> Self {
         assert!(
             !vectors.is_empty(),
             "Cannot bundle an empty slice of hypervectors"
@@ -209,7 +198,7 @@ impl<V: VSA> Hypervector<V> {
     ///
     /// * `other` - The hypervector to bundle with.
     /// * `tie_breaker` - The tie-breaking rule to use.
-    pub fn bundle(&self, other: &Self, tie_breaker: crate::TieBreaker) -> Self {
+    pub fn bundle(&self, other: &Self, tie_breaker: TieBreaker) -> Self {
         let mut rng = GLOBAL_RNG.lock().unwrap();
         Self {
             inner: self.inner.bundle(&other.inner, tie_breaker, &mut *rng),
@@ -257,7 +246,7 @@ impl<V: VSA> Hypervector<V> {
     ///
     /// * `vectors` - A slice of hypervectors to bundle.
     /// * `tie_breaker` - The tie-breaking rule to use.
-    pub fn bundle_many(vectors: &[Self], tie_breaker: crate::TieBreaker) -> Self {
+    pub fn bundle_many(vectors: &[Self], tie_breaker: TieBreaker) -> Self {
         let mut rng = GLOBAL_RNG.lock().unwrap();
         let inners: Vec<V> = vectors.iter().map(|hv| hv.inner.clone()).collect();
         Self {
@@ -286,7 +275,7 @@ impl<V: VSA> Add for Hypervector<V> {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
-        let tie_breaker = crate::TieBreaker::Random;
+        let tie_breaker = TieBreaker::Random;
         let mut rng = GLOBAL_RNG.lock().unwrap();
         Self {
             inner: self.inner.bundle(&rhs.inner, tie_breaker, &mut *rng),
@@ -305,12 +294,18 @@ impl<V: VSA> Mul for Hypervector<V> {
     }
 }
 
+// Declare your submodules. Ensure that these files exist in the src/ folder.
+pub mod encoder;
+pub mod fhrr;
+pub mod mbat;
+pub mod ssp;
+
 #[cfg(test)]
 mod tests {
     use super::*;
     // Bring the mbat module into scope.
-    use crate::hypervector::mbat;
-    // Now you can alias HV as follows:
+    use crate::mbat;
+    // Alias HV for ease of use.
     type HV = Hypervector<mbat::MBAT>;
 
     #[test]
@@ -347,14 +342,14 @@ mod tests {
                 }
                 let sim: f32 = binding1.cosine_similarity(&binding2);
                 assert!(
-                sim.abs() < 0.1,
-                "Binding for pair ({}, {}) has cosine similarity {} with binding for pair ({}, {})",
-                i,
-                j,
-                sim,
-                k,
-                l
-            );
+                    sim.abs() < 0.1,
+                    "Binding for pair ({}, {}) has cosine similarity {} with binding for pair ({}, {})",
+                    i,
+                    j,
+                    sim,
+                    k,
+                    l
+                );
             }
         }
     }

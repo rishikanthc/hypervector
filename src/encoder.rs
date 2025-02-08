@@ -39,17 +39,6 @@ impl<V: VSA> ObjectEncoder<V> {
     ///
     /// * `dim` - The dimension of the hypervectors to generate.
     /// * `tie_breaker` - The tie-breaking rule used during bundling.
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use hypervector::encoder::ObjectEncoder;
-    /// use hypervector::TieBreaker;
-    /// use hypervector::mbat::MBAT;
-    ///
-    /// // For deterministic behavior in tests, use a fixed tie-breaker.
-    /// let encoder = ObjectEncoder::<MBAT>::new(10000, TieBreaker::AlwaysPositive);
-    /// ```
     pub fn new(dim: usize, tie_breaker: TieBreaker) -> Self {
         Self {
             dim,
@@ -191,7 +180,7 @@ impl<V: VSA> ObjectEncoder<V> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hypervector::mbat::MBAT;
+    use crate::mbat::MBAT;
     use crate::TieBreaker;
     use serde_json::json;
 
@@ -365,7 +354,7 @@ mod tests {
 #[cfg(test)]
 mod ssp_tests {
     use super::*;
-    use crate::hypervector::ssp::SSP;
+    use crate::ssp::SSP;
     use crate::TieBreaker;
     use serde_json::json;
 
@@ -538,7 +527,7 @@ mod ssp_tests {
 #[cfg(test)]
 mod fhrr_tests {
     use super::*;
-    use crate::hypervector::fhrr::FHRR;
+    use crate::fhrr::FHRR;
     use crate::TieBreaker;
     use serde_json::json;
 
