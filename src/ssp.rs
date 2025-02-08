@@ -56,6 +56,13 @@ impl VSA for SSP {
     fn to_vec(&self) -> Vec<f32> {
         self.to_vec()
     }
+
+    /// Create an SSP from a plain vector of `f32` values.
+    ///
+    /// This simply wraps the provided vector as the internal representation.
+    fn from_vec(v: Vec<f32>) -> Self {
+        SSP { data: v }
+    }
 }
 
 impl SSP {
@@ -320,5 +327,30 @@ mod tests {
         let b = SSP::generate(dim, &mut rng);
         let hd = a.hamming_distance(&b);
         assert!((0.0..=1.0).contains(&hd));
+    }
+
+    /// Tests that converting an SSP to a vector returns the same data.
+    #[test]
+    fn test_to_vec() {
+        let x = SSP {
+            data: vec![0.1, -0.2, 0.3, -0.4],
+        };
+        let vec_f32 = x.to_vec();
+        assert_eq!(vec_f32, vec![0.1, -0.2, 0.3, -0.4]);
+    }
+
+    /// Tests the `from_vec` conversion for SSP.
+    ///
+    /// This test creates a vector of f32 values, uses `from_vec` to construct an SSP,
+    /// and then checks that converting back with `to_vec` recovers the original vector.
+    #[test]
+    fn test_from_vec_conversion() {
+        let original: Vec<f32> = vec![0.5, -0.5, 1.0, -1.0, 0.0];
+        let ssp = SSP::from_vec(original.clone());
+        let reconstructed = ssp.to_vec();
+        assert_eq!(
+            original, reconstructed,
+            "from_vec conversion did not round-trip correctly"
+        );
     }
 }

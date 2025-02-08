@@ -159,4 +159,20 @@ impl VSA for MBAT {
     fn to_vec(&self) -> Vec<f32> {
         self.data.iter().map(|&x| x as f32).collect()
     }
+
+    /// Create an MBAT hypervector from a plain `Vec<f32>`.
+    ///
+    /// This function converts each element of the vector: nonnegative values become `1` and
+    /// negative values become `-1`.
+    ///
+    /// # Arguments
+    ///
+    /// * `v` - A vector of `f32` values, typically containing only `1.0` and `-1.0`.
+    fn from_vec(v: Vec<f32>) -> Self {
+        let data = v
+            .into_iter()
+            .map(|x| if x >= 0.0 { 1 } else { -1 })
+            .collect();
+        MBAT { data }
+    }
 }

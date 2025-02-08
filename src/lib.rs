@@ -106,6 +106,9 @@ pub trait VSA: Sized + Clone {
     /// Converts the hypervector into a plain `Vec<f32>`.
     fn to_vec(&self) -> Vec<f32>;
 
+    /// Creates a Hypervector from a plain vector of `f32` by using the VSA's from_vec conversion.
+    fn from_vec(v: Vec<f32>) -> Self;
+
     /// Bundles many hypervectors (folding a slice using the bundling operation).
     ///
     /// # Panics
@@ -237,6 +240,13 @@ impl<V: VSA> Hypervector<V> {
     /// Converts this hypervector into a plain vector of `f32`.
     pub fn to_vec(&self) -> Vec<f32> {
         self.inner.to_vec()
+    }
+
+    /// Creates a Hypervector from a plain vector of `f32` by using the VSA's from_vec conversion.
+    pub fn from_vec(v: Vec<f32>) -> Self {
+        Self {
+            inner: V::from_vec(v),
+        }
     }
 
     /// Bundles many hypervectors by extracting their inner representations and then wrapping
@@ -425,5 +435,23 @@ mod tests {
         for &x in &vec_f32 {
             assert!(x == 1.0 || x == -1.0, "Element {} is not 1.0 or -1.0", x);
         }
+    }
+
+    #[test]
+    fn test_from_vec_conversion() {
+        let dim = 100;
+        // Create a vector of 100 elements alternating between 1.0 and -1.0.
+        let vec_f32: Vec<f32> = (0..dim)
+            .map(|i| if i % 2 == 0 { 1.0 } else { -1.0 })
+            .collect();
+        // Create a hypervector from the vector.
+        let hv = HV::from_vec(vec_f32.clone());
+        // Convert it back to a plain vector.
+        let converted = hv.to_vec();
+        // Verify that the conversion round-trip produces the original vector.
+        assert_eq!(
+            converted, vec_f32,
+            "from_vec conversion did not round-trip correctly"
+        );
     }
 }

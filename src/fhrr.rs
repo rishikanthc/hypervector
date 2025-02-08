@@ -13,6 +13,8 @@
 //! - **Cosine Similarity:** Defined as the average cosine of the differences between corresponding angles.
 //! - **Hamming Distance:** Defined as `(1 - cosine_similarity) / 2`.
 //! - **Conversion to Vec:** Returns the cosine (i.e. the real part) of each angle.
+//! - **Conversion from Vec:** Constructs an FHRR hypervector from a vector of cosine values by taking the arccosine
+//!   (with values clamped to \([-1, 1]\)) and reducing modulo 2π.
 
 use rand::distributions::Uniform;
 use rand::Rng;
@@ -149,6 +151,35 @@ impl VSA for FHRR {
     fn to_vec(&self) -> Vec<f32> {
         self.data.iter().map(|&theta| theta.cos()).collect()
     }
+
+    /// Create an FHRR hypervector from a plain `Vec<f32>`.
+    ///
+    /// This function assumes that the provided vector contains valid cosine values (i.e. values in [-1, 1]).
+    /// For each element, we clamp the value to [-1, 1] and then compute the angle via arccos.
+    /// The resulting angle (in [0, π]) is then normalized using `mod_2pi`.
+    ///
+    /// # Arguments
+    ///
+    /// * `v` - A vector of `f32` values, representing the cosine (real part) of each coordinate.
+    fn from_vec(v: Vec<f32>) -> Self {
+        let data = v
+            .into_iter()
+            .map(|x| {
+                // Clamp the input to the valid range [-1, 1]
+                let clamped = if x > 1.0 {
+                    1.0
+                } else if x < -1.0 {
+                    -1.0
+                } else {
+                    x
+                };
+                // Compute the angle using arccos.
+                // Note: This returns a value in [0, π]. Applying mod_2pi here is mostly for consistency.
+                FHRR::mod_2pi(clamped.acos())
+            })
+            .collect();
+        FHRR { data }
+    }
 }
 
 #[cfg(test)]
@@ -240,6 +271,29 @@ mod tests {
         let vec_f32 = x.to_vec();
         for &val in &vec_f32 {
             assert!((val - 1.0).abs() < 1e-5, "Expected 1.0 but found {}", val);
+        }
+    }
+
+    /// Tests the `from_vec` conversion for FHRR.
+    ///
+    /// This test starts with a vector of cosine values, uses `from_vec` to construct an FHRR hypervector,
+    /// and then checks that converting back using `to_vec` recovers the original cosine values.
+    #[test]
+    fn test_from_vec_conversion() {
+        // Create a vector of cosine values.
+        let original: Vec<f32> = vec![0.5, -0.5, 1.0, -1.0, 0.0];
+        // Construct an FHRR hypervector from the cosine values.
+        let hyper = FHRR::from_vec(original.clone());
+        // Convert the hypervector back to a vector of cosine values.
+        let reconstructed = hyper.to_vec();
+        // Since floating-point arithmetic can introduce small errors, compare approximately.
+        for (orig, recon) in original.iter().zip(reconstructed.iter()) {
+            assert!(
+                (orig - recon).abs() < 1e-5,
+                "Original cosine {} and reconstructed cosine {} differ",
+                orig,
+                recon
+            );
         }
     }
 }
