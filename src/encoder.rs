@@ -521,3 +521,175 @@ mod ssp_tests {
         println!("SSP: Object codebook has {} entries.", object_book.len());
     }
 }
+
+#[cfg(test)]
+mod fhrr_tests {
+    use super::*;
+    use crate::fhrr::FHRR;
+    use crate::{Hypervector, TieBreaker};
+    use serde_json::json;
+
+    /// Test that calling `get_token_vector` with the same token yields identical FHRR hypervectors.
+    #[test]
+    fn test_fhrr_token_vector_consistency() {
+        let mut encoder = ObjectEncoder::<FHRR>::new(1000, TieBreaker::AlwaysPositive);
+        let token = "exampleToken";
+        let vec1 = encoder.get_token_vector(token);
+        let vec2 = encoder.get_token_vector(token);
+        assert_eq!(
+            vec1, vec2,
+            "FHRR token vectors should be consistent across multiple calls"
+        );
+    }
+
+    /// Test encoding a JSON object using FHRR.
+    #[test]
+    fn test_fhrr_encode_object() {
+        let mut encoder = ObjectEncoder::<FHRR>::new(1000, TieBreaker::AlwaysPositive);
+        let json_obj = json!({
+            "firstName": "Alice",
+            "lastName": "Smith",
+            "isActive": true
+        });
+
+        let encoded1 = encoder.encode_object(&json_obj);
+        let retrieved = encoder
+            .get_encoded_object(&json_obj)
+            .expect("FHRR: Encoded object should be stored in the codebook");
+        assert_eq!(
+            encoded1, *retrieved,
+            "FHRR: Stored encoding should match computed encoding"
+        );
+
+        let encoded2 = encoder.encode_object(&json_obj);
+        assert_eq!(
+            encoded1, encoded2,
+            "FHRR: Re-encoding the same object should produce the same hypervector"
+        );
+    }
+
+    /// Test that different JSON objects produce different FHRR encodings.
+    #[test]
+    fn test_fhrr_different_objects_have_different_encodings() {
+        let mut encoder = ObjectEncoder::<FHRR>::new(1000, TieBreaker::AlwaysPositive);
+        let json_obj1 = json!({
+            "firstName": "Alice",
+            "lastName": "Smith",
+            "isActive": true
+        });
+        let json_obj2 = json!({
+            "firstName": "Bob",
+            "lastName": "Jones",
+            "isActive": false
+        });
+
+        let encoded1 = encoder.encode_object(&json_obj1);
+        let encoded2 = encoder.encode_object(&json_obj2);
+        assert_ne!(
+            encoded1, encoded2,
+            "FHRR: Different JSON objects should have different encodings"
+        );
+    }
+
+    /// Test that generated entity hypervectors for FHRR are nearly orthogonal and that bindings retrieve the correct pair.
+    #[test]
+    fn test_fhrr_entity_binding_retrieval() {
+        let mut encoder = ObjectEncoder::<FHRR>::new(1000, TieBreaker::AlwaysPositive);
+        let num_entities = 10;
+        let mut entity_vectors = Vec::new();
+
+        // Generate hypervectors for tokens "entity0", "entity1", ... "entity9"
+        for i in 0..num_entities {
+            let token = format!("entity{}", i);
+            let hv = encoder.get_token_vector(&token);
+            entity_vectors.push(hv);
+        }
+
+        // Check that all entity hypervectors are nearly orthogonal.
+        for i in 0..num_entities {
+            for j in (i + 1)..num_entities {
+                let sim = entity_vectors[i].cosine_similarity(&entity_vectors[j]);
+                assert!(
+                    sim.abs() < 0.2,
+                    "FHRR: Entity hypervectors {} and {} are not orthogonal enough: sim = {}",
+                    i,
+                    j,
+                    sim
+                );
+            }
+        }
+
+        // Compute and store bindings for all unique pairs.
+        let mut pair_bindings = Vec::new();
+        for i in 0..num_entities {
+            for j in (i + 1)..num_entities {
+                let binding = entity_vectors[i].bind(&entity_vectors[j]);
+                pair_bindings.push(((i, j), binding));
+            }
+        }
+
+        // Choose a particular pair, e.g., (3, 7), for which to "retrieve" the binding.
+        let query_pair = (3, 7);
+        let query_binding = entity_vectors[query_pair.0].bind(&entity_vectors[query_pair.1]);
+
+        // Compare the query binding to each stored binding.
+        for &((i, j), ref binding) in &pair_bindings {
+            let sim = query_binding.cosine_similarity(binding);
+            if (i, j) == query_pair {
+                assert!(
+                    (sim - 1.0).abs() < 1e-6,
+                    "FHRR: Correct pair ({},{}) similarity not close to 1: sim = {}",
+                    i,
+                    j,
+                    sim
+                );
+            } else {
+                // Relaxed threshold for non-bound pairs.
+                assert!(
+                    sim.abs() < 0.12,
+                    "FHRR: Binding for pair ({},{}) has unexpected similarity with query pair: sim = {}",
+                    i,
+                    j,
+                    sim
+                );
+            }
+        }
+    }
+
+    /// Test retrieval of the token and object codebooks for FHRR.
+    #[test]
+    fn test_fhrr_fetch_codebooks() {
+        let mut encoder = ObjectEncoder::<FHRR>::new(1000, TieBreaker::AlwaysPositive);
+
+        // Encode a couple of objects.
+        let json_obj1 = json!({
+            "firstName": "Alice",
+            "lastName": "Smith",
+            "isActive": true
+        });
+        let json_obj2 = json!({
+            "firstName": "Bob",
+            "lastName": "Jones",
+            "isActive": false
+        });
+
+        encoder.encode_object(&json_obj1);
+        encoder.encode_object(&json_obj2);
+
+        // Fetch token codebook.
+        let token_book = encoder.token_codebook();
+        assert!(
+            !token_book.is_empty(),
+            "FHRR: Token codebook should not be empty after encoding objects"
+        );
+        println!("FHRR: Token codebook has {} entries.", token_book.len());
+
+        // Fetch object (document) codebook.
+        let object_book = encoder.object_codebook();
+        assert!(
+            !object_book.is_empty(),
+            "FHRR: Object codebook should not be empty after encoding objects"
+        );
+        println!("FHRR: Object codebook has {} entries.", object_book.len());
+    }
+}

@@ -207,6 +207,7 @@ impl<V: VSA> Mul for Hypervector<V> {
 
 // Declare submodules for different VSA implementations.
 pub mod encoder;
+pub mod fhrr;
 pub mod mbat;
 pub mod ssp; // SSP is implemented in src/ssp.rs
 
