@@ -3,7 +3,7 @@
 //! This crate implements high-dimensional vectors for hyperdimensional computing / VSA.
 //! It currently provides two implementations:
 //! - **MBAT**: Bipolar vectors (elements in {-1, +1}).
-//! - **SPP**: Semantic Spatial Parameters (in a separate module).
+//! - **SSP**: Semantic Spatial Parameters (in a separate module).
 //!
 //! The core components (global RNG, VSA trait, Hypervector type, etc.) are defined here.
 
@@ -13,8 +13,6 @@ use serde::{Deserialize, Serialize};
 use std::ops::{Add, Mul};
 use std::sync::Mutex;
 
-/// A global RNG used for hypervector generation and any randomness in operations.
-/// Set the global seed via [`set_global_seed`].
 static GLOBAL_RNG: Lazy<Mutex<StdRng>> = Lazy::new(|| Mutex::new(StdRng::from_entropy()));
 
 /// Set the seed for the global RNG. This affects all hypervector generation and operations.
@@ -45,7 +43,7 @@ pub enum TieBreaker {
 }
 
 /// The trait defining the interface for a VSA algorithm.
-/// New VSA implementations (like SPP) can be added by implementing this trait.
+/// New VSA implementations (like SSP) can be added by implementing this trait.
 pub trait VSA: Sized + Clone {
     /// The type used to represent each element in the hypervector.
     type Elem: Copy + std::fmt::Debug + PartialEq + Into<f32>;
@@ -56,7 +54,7 @@ pub trait VSA: Sized + Clone {
     /// Bundle (superpose) two hypervectors.
     ///
     /// For MBAT, this is the element-wise sum followed by a sign function with tie-breaking.
-    fn bundle(&self, other: &Self, tie_breaker: TieBreaker, rng: &mut impl Rng) -> Self;
+    fn bundle(&self, other: &Self, tie_breaker: crate::TieBreaker, rng: &mut impl Rng) -> Self;
 
     /// Bind two hypervectors.
     ///
@@ -73,7 +71,7 @@ pub trait VSA: Sized + Clone {
     fn to_vec(&self) -> Vec<f32>;
 
     /// Bundle many hypervectors (folding a slice using the bundling operation).
-    fn bundle_many(vectors: &[Self], tie_breaker: TieBreaker, rng: &mut impl Rng) -> Self {
+    fn bundle_many(vectors: &[Self], tie_breaker: crate::TieBreaker, rng: &mut impl Rng) -> Self {
         assert!(
             !vectors.is_empty(),
             "Cannot bundle an empty slice of hypervectors"
@@ -81,6 +79,19 @@ pub trait VSA: Sized + Clone {
         let mut result = vectors[0].clone();
         for vec in &vectors[1..] {
             result = result.bundle(vec, tie_breaker, rng);
+        }
+        result
+    }
+
+    /// Bind many hypervectors (folding a slice using the binding operation).
+    fn bind_many(vectors: &[Self]) -> Self {
+        assert!(
+            !vectors.is_empty(),
+            "Cannot bind an empty slice of hypervectors"
+        );
+        let mut result = vectors[0].clone();
+        for vec in &vectors[1..] {
+            result = result.bind(vec);
         }
         result
     }
@@ -114,7 +125,7 @@ impl<V: VSA> Hypervector<V> {
     }
 
     /// Bundle (superpose) two hypervectors with the specified tie-breaking rule.
-    pub fn bundle(&self, other: &Self, tie_breaker: TieBreaker) -> Self {
+    pub fn bundle(&self, other: &Self, tie_breaker: crate::TieBreaker) -> Self {
         let mut rng = GLOBAL_RNG.lock().unwrap();
         Self {
             inner: self.inner.bundle(&other.inner, tie_breaker, &mut *rng),
@@ -138,9 +149,34 @@ impl<V: VSA> Hypervector<V> {
         self.inner.hamming_distance(&other.inner)
     }
 
-    /// Convert the hypervector into a plain vector of `f32` (for example, for Lance DB compatibility).
+    /// Convert the hypervector into a plain vector of `f32`.
     pub fn to_vec(&self) -> Vec<f32> {
         self.inner.to_vec()
+    }
+
+    /// Bundle many hypervectors.
+    ///
+    /// This method extracts the inner vectors from the provided hypervectors,
+    /// calls the default implementation of `bundle_many` on the inner type,
+    /// and wraps the result back in a `Hypervector`.
+    pub fn bundle_many(vectors: &[Self], tie_breaker: crate::TieBreaker) -> Self {
+        let mut rng = GLOBAL_RNG.lock().unwrap();
+        let inners: Vec<V> = vectors.iter().map(|hv| hv.inner.clone()).collect();
+        Self {
+            inner: V::bundle_many(&inners, tie_breaker, &mut *rng),
+        }
+    }
+
+    /// Bind many hypervectors.
+    ///
+    /// This method extracts the inner vectors from the provided hypervectors,
+    /// calls the default implementation of `bind_many` on the inner type,
+    /// and wraps the result back in a `Hypervector`.
+    pub fn bind_many(vectors: &[Self]) -> Self {
+        let inners: Vec<V> = vectors.iter().map(|hv| hv.inner.clone()).collect();
+        Self {
+            inner: V::bind_many(&inners),
+        }
     }
 }
 
@@ -150,7 +186,7 @@ impl<V: VSA> Add for Hypervector<V> {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
-        let tie_breaker = TieBreaker::Random;
+        let tie_breaker = crate::TieBreaker::Random;
         let mut rng = GLOBAL_RNG.lock().unwrap();
         Self {
             inner: self.inner.bundle(&rhs.inner, tie_breaker, &mut *rng),
@@ -170,8 +206,9 @@ impl<V: VSA> Mul for Hypervector<V> {
 }
 
 // Declare submodules for different VSA implementations.
+pub mod encoder;
 pub mod mbat;
-pub mod spp; // SPP is implemented in src/spp.rs
+pub mod ssp; // SSP is implemented in src/ssp.rs
 
 #[cfg(test)]
 mod tests {
