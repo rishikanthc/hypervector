@@ -1,6 +1,6 @@
 [package]
 name = "hypervector"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 authors = ["Rishikanth Chandrasekaran <rishikanthc@gmail.com>"]
 description = "A crate that implements hyperdimensional vectors and VSAs."
